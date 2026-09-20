@@ -1,18 +1,18 @@
 /**
- * Notion as a content source.
+ * Notion as the content source.
  *
- * When `NOTION_TOKEN` and a database (or data source) id are set, posts are
- * read from a Notion database instead of the local Markdown files. Each row
- * becomes a `Post`: its properties supply the metadata and the page body is
- * fetched as Markdown and rendered through the same pipeline as the files, so
- * the rest of the site (feed, sitemap, tags, OG images) is unchanged.
+ * Posts are read from a Notion database configured through `NOTION_TOKEN` and a
+ * database (or data source) id. Each row becomes a `Post`: its properties
+ * supply the metadata and the page body is fetched as Markdown and rendered so
+ * the rest of the site (feed, sitemap, tags, OG images) can consume it.
  *
  * The database may use any property names; these candidates are matched
  * case-insensitively, with sensible fallbacks when a property is absent:
  *
  *   - title       the page's `title` property
  *   - Description / Summary / Excerpt / Subtitle  (rich text)
- *   - Date / Published / Publish Date / Date Published  (date; else created time)
+ *   - Date / Published / Publish Date / Date Published  (date, or DD.MM.YYYY
+ *       text; else created time)
  *   - Updated / Last Updated / Modified  (date; optional)
  *   - Tags / Categories / Topics  (multi-select)
  *   - Author / Authors / By  (rich text, people, or select)
@@ -45,13 +45,6 @@ function getClient(): Client {
     client = new Client({ auth: process.env.NOTION_TOKEN });
   }
   return client;
-}
-
-export function isNotionConfigured(): boolean {
-  return Boolean(
-    process.env.NOTION_TOKEN &&
-      (process.env.NOTION_DATABASE_ID || process.env.NOTION_DATA_SOURCE_ID),
-  );
 }
 
 function slugify(value: string): string {
@@ -89,9 +82,31 @@ function getRichText(props: Properties, names: string[]): string {
   return prop?.type === "rich_text" ? richTextToPlain(prop.rich_text) : "";
 }
 
+/**
+ * Normalize a date written as free text in a Notion property. Handles the
+ * `DD.MM.YYYY` form (also with `/` or `-` separators) used in the database
+ * and returns an ISO `YYYY-MM-DD` string. Anything else — including native
+ * ISO text like `2024-12-04` — is returned trimmed but unchanged, so
+ * `toIsoDate` can make the final attempt.
+ */
+function parseDateText(text: string): string {
+  const trimmed = text.trim();
+  const dmy = trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return trimmed;
+}
+
 function getDate(props: Properties, names: string[]): string | undefined {
   const prop = findProperty(props, names);
-  return prop?.type === "date" ? (prop.date?.start ?? undefined) : undefined;
+  if (prop?.type === "date") return prop.date?.start ?? undefined;
+  if (prop?.type === "rich_text") {
+    const text = richTextToPlain(prop.rich_text);
+    return text ? parseDateText(text) : undefined;
+  }
+  return undefined;
 }
 
 function getTags(props: Properties): string[] {
@@ -188,7 +203,12 @@ async function resolveDataSourceId(): Promise<string> {
   const dataSourceId = process.env.NOTION_DATA_SOURCE_ID?.trim();
   if (dataSourceId) return dataSourceId;
 
-  const databaseId = process.env.NOTION_DATABASE_ID!.trim();
+  const databaseId = process.env.NOTION_DATABASE_ID?.trim();
+  if (!databaseId) {
+    throw new Error(
+      "Notion is not configured: set NOTION_TOKEN and NOTION_DATABASE_ID (or NOTION_DATA_SOURCE_ID).",
+    );
+  }
   const database = await getClient().databases.retrieve({ database_id: databaseId });
   if ("data_sources" in database && database.data_sources.length > 0) {
     return database.data_sources[0].id;

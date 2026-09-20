@@ -1,11 +1,5 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { cache } from "react";
-import matter from "gray-matter";
-import { markdownToHtml, readingMinutes } from "./markdown";
-import { getNotionPosts, isNotionConfigured } from "./notion";
-
-const POSTS_DIR = path.join(process.cwd(), "content/posts");
+import { getNotionPosts } from "./notion";
 
 export type Post = {
   slug: string;
@@ -34,52 +28,13 @@ export function tagSlug(tag: string): string {
     .replace(/^-|-$/g, "");
 }
 
-function toIsoDate(value: unknown, field: string, slug: string): string {
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) {
-    throw new Error(`Post "${slug}" has an invalid \`${field}\` in its frontmatter.`);
-  }
-  return date.toISOString();
-}
-
-function requireString(value: unknown, field: string, slug: string): string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new Error(`Post "${slug}" is missing a \`${field}\` in its frontmatter.`);
-  }
-  return value.trim();
-}
-
-async function readPost(filename: string): Promise<Post> {
-  const slug = filename.replace(/\.md$/, "");
-  const raw = await fs.readFile(path.join(POSTS_DIR, filename), "utf8");
-  const { data, content } = matter(raw);
-
-  return {
-    slug,
-    title: requireString(data.title, "title", slug),
-    description: requireString(data.description, "description", slug),
-    date: toIsoDate(data.date, "date", slug),
-    updated: data.updated ? toIsoDate(data.updated, "updated", slug) : undefined,
-    author: typeof data.author === "string" ? data.author : "",
-    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-    readingMinutes: readingMinutes(content),
-    html: await markdownToHtml(content),
-  };
-}
-
-async function readFilePosts(): Promise<Post[]> {
-  const filenames = (await fs.readdir(POSTS_DIR)).filter((name) => name.endsWith(".md"));
-  return Promise.all(filenames.map(readPost));
-}
-
 /**
- * Every published post, newest first. Sourced from the Notion database when
- * `NOTION_TOKEN` and a database id are configured, otherwise from the local
- * Markdown files. Memoized so that a request rendering the page, its metadata
- * and its OG image only loads the content once.
+ * Every published post, newest first, sourced from the Notion database.
+ * Memoized so that a request rendering the page, its metadata and its OG image
+ * only loads the content once.
  */
 export const getPosts = cache(async (): Promise<Post[]> => {
-  const posts = isNotionConfigured() ? await getNotionPosts() : await readFilePosts();
+  const posts = await getNotionPosts();
   return [...posts].sort((a, b) => b.date.localeCompare(a.date));
 });
 

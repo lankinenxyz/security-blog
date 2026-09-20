@@ -1,8 +1,9 @@
 # Security Notes
 
-A small Markdown-driven blog built on Next.js 16 (App Router), with the SEO
-surface wired up: per-page canonicals, Open Graph and Twitter cards, generated
-OG images, JSON-LD structured data, a sitemap, `robots.txt` and an RSS feed.
+A small blog built on Next.js 16 (App Router) with posts sourced from a Notion
+database, and the SEO surface wired up: per-page canonicals, Open Graph and
+Twitter cards, generated OG images, JSON-LD structured data, a sitemap,
+`robots.txt` and an RSS feed.
 
 ## Getting started
 
@@ -19,43 +20,9 @@ cp .env.example .env.local   # then edit NEXT_PUBLIC_SITE_URL
 bun run build && bun run start
 ```
 
-## Content sources
-
-Posts come from one of two sources, chosen at build time:
-
-- **Local Markdown** (default) — files in `content/posts/`.
-- **Notion database** — used automatically when `NOTION_TOKEN` and a database id
-  are set. See [Sourcing posts from Notion](#sourcing-posts-from-notion).
-
-Both produce the same `Post` shape, so the rest of the site (feed, sitemap, tag
-pages, OG images) works identically either way.
-
-## Writing a post
-
-Add a Markdown file to `content/posts/`. The filename becomes the URL slug, so
-`content/posts/csp-that-holds.md` is served at `/posts/csp-that-holds`.
-
-```markdown
----
-title: "A Content Security Policy That Actually Holds"
-description: "One or two sentences. This becomes the meta description, the
-  Open Graph description and the RSS summary, so keep it under ~155 characters."
-date: 2026-08-19
-updated: 2026-09-02   # optional, only for substantive edits
-tags: ["Web Security", "Headers"]
-author: "Elias Lankinen"
----
-
-Body text in Markdown (GFM: tables, strikethrough, task lists).
-```
-
-`title`, `description` and `date` are required; the build fails with a named
-error if one is missing or malformed. Tag pages are generated automatically
-from the `tags` array.
-
 ## Sourcing posts from Notion
 
-To publish from a Notion database instead of local files:
+Posts come from a Notion database, queried at build time. To set it up:
 
 1. Create an internal integration at
    [notion.so/my-integrations](https://www.notion.so/my-integrations) and copy
@@ -69,9 +36,8 @@ To publish from a Notion database instead of local files:
    # NOTION_DATA_SOURCE_ID=<optional; defaults to the first data source>
    ```
 
-The page body is fetched as Markdown and rendered through the same pipeline as
-the local files. Database properties are matched case-insensitively, with
-fallbacks:
+The page body is fetched as Markdown and rendered to HTML. Database properties
+are matched case-insensitively, with fallbacks:
 
 | Post field  | Notion property (any of)                              | Fallback                     |
 | ----------- | ---------------------------------------------------- | ---------------------------- |
