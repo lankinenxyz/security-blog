@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Security Notes
 
-## Getting Started
+A small Markdown-driven blog built on Next.js 16 (App Router), with the SEO
+surface wired up: per-page canonicals, Open Graph and Twitter cards, generated
+OG images, JSON-LD structured data, a sitemap, `robots.txt` and an RSS feed.
 
-First, run the development server:
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun install
+bun run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set the production origin before building for deploy, since it is baked into
+canonical URLs, the sitemap, `robots.txt` and the feed:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cp .env.example .env.local   # then edit NEXT_PUBLIC_SITE_URL
+bun run build && bun run start
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Content sources
 
-## Learn More
+Posts come from one of two sources, chosen at build time:
 
-To learn more about Next.js, take a look at the following resources:
+- **Local Markdown** (default) — files in `content/posts/`.
+- **Notion database** — used automatically when `NOTION_TOKEN` and a database id
+  are set. See [Sourcing posts from Notion](#sourcing-posts-from-notion).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Both produce the same `Post` shape, so the rest of the site (feed, sitemap, tag
+pages, OG images) works identically either way.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Writing a post
 
-## Deploy on Vercel
+Add a Markdown file to `content/posts/`. The filename becomes the URL slug, so
+`content/posts/csp-that-holds.md` is served at `/posts/csp-that-holds`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```markdown
+---
+title: "A Content Security Policy That Actually Holds"
+description: "One or two sentences. This becomes the meta description, the
+  Open Graph description and the RSS summary, so keep it under ~155 characters."
+date: 2026-08-19
+updated: 2026-09-02   # optional, only for substantive edits
+tags: ["Web Security", "Headers"]
+author: "Elias Lankinen"
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Body text in Markdown (GFM: tables, strikethrough, task lists).
+```
+
+`title`, `description` and `date` are required; the build fails with a named
+error if one is missing or malformed. Tag pages are generated automatically
+from the `tags` array.
+
+## Sourcing posts from Notion
+
+To publish from a Notion database instead of local files:
+
+1. Create an internal integration at
+   [notion.so/my-integrations](https://www.notion.so/my-integrations) and copy
+   its secret.
+2. Share the database with the integration (**•••  → Connections**).
+3. Set the environment variables:
+
+   ```bash
+   NOTION_TOKEN=secret_xxx
+   NOTION_DATABASE_ID=<the database id from its URL>
+   # NOTION_DATA_SOURCE_ID=<optional; defaults to the first data source>
+   ```
+
+The page body is fetched as Markdown and rendered through the same pipeline as
+the local files. Database properties are matched case-insensitively, with
+fallbacks:
+
+| Post field  | Notion property (any of)                              | Fallback                     |
+| ----------- | ---------------------------------------------------- | ---------------------------- |
+| title       | the `title` property                                 | —                            |
+| description | `Description`, `Summary`, `Excerpt`, `Subtitle`      | excerpt of the body          |
+| date        | `Date`, `Published`, `Publish Date`, `Date Published`| the page's created time      |
+| updated     | `Updated`, `Last Updated`, `Modified`                | omitted                      |
+| tags        | `Tags`, `Categories`, `Topics` (multi-select)        | none                         |
+| author      | `Author`, `Authors`, `By` (text, people, or select)  | empty                        |
+| slug        | `Slug`, `Path`, `Permalink`                          | slugified title              |
+
+A row is published when a `Published`/`Public`/`Live` checkbox is checked, or a
+`Status`/`Stage`/`State` select reads Published/Live/Done. A database with no
+such property publishes every row.
+
+> Notion is queried at build time, so rerun the build (or trigger a redeploy) to
+> pick up new or edited posts.
+
+## What is implemented for SEO
+
+| Area | Where |
+| --- | --- |
+| Title template, description, robots directives | `app/layout.tsx` |
+| Per-page canonical, OG and Twitter tags | `lib/metadata.ts` |
+| JSON-LD (`WebSite`, `Person`, `Blog`, `BlogPosting`, `BreadcrumbList`, `CollectionPage`) | `components/json-ld.tsx` and each page |
+| Generated 1200×630 OG images | `app/opengraph-image.tsx`, `app/posts/[slug]/opengraph-image.tsx` |
+| Sitemap with real `lastmod` dates | `app/sitemap.ts` |
+| `robots.txt` pointing at the sitemap | `app/robots.ts` |
+| RSS 2.0 feed with full content | `app/rss.xml/route.ts` |
+| Internal linking (tags, previous/next post) | `app/posts/[slug]/page.tsx`, `app/tags/` |
+
+Every route is prerendered at build time, so crawlers get complete HTML with
+the metadata already in `<head>`.
+
+## Before going live
+
+- Set `NEXT_PUBLIC_SITE_URL` in the deploy environment.
+- Update the site name, description and author in `lib/site.ts`.
+- Add search-console tokens to the `verification` field in `app/layout.tsx`.
+- Serve the site from a single origin and redirect the alternatives, so the
+  canonical URLs and the sitemap agree with what is actually reachable.
